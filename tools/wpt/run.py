@@ -797,6 +797,16 @@ class Ladybird(BrowserSetup):
     def setup_kwargs(self, kwargs):
         pass
 
+class PaperMuncher(BrowserSetup):
+    name = "paper_muncher"
+    browser_cls = browser.PaperMuncher
+
+    def install(self, channel=None):
+        raise NotImplementedError
+
+    def setup_kwargs(self, kwargs):
+        pass
+
 class WebKitTestRunner(BrowserSetup):
     name = "wktr"
     browser_cls = browser.WebKitTestRunner
@@ -898,6 +908,9 @@ product_setup = {
     "wpewebkit_minibrowser": WPEWebKitMiniBrowser,
     "epiphany": Epiphany,
     "ladybird": Ladybird,
+
+
+    "paper_muncher": PaperMuncher,
 }
 
 

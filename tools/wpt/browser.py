@@ -2263,6 +2263,37 @@ class Ladybird(Browser):
                 return match.group(1)
         return None
 
+class PaperMuncher(Browser):
+    product = "paper_muncher"
+    requirements = None
+
+    def download(self, dest=None, channel=None, rename=None):
+        raise NotImplementedError
+
+    def install(self, dest=None, channel=None):
+        raise NotImplementedError
+
+    def find_binary(self, venv_path=None, channel=None):
+        raise NotImplementedError
+
+    def find_webdriver(self, venv_path=None, channel=None):
+        raise NotImplementedError
+
+    def install_webdriver(self, dest=None, channel=None, browser_binary=None):
+        raise NotImplementedError
+
+    def version(self, binary=None, webdriver_binary=None):
+        if not binary:
+            self.logger.warning("No browser binary provided.")
+            return None
+        output = call(binary, "--version")
+        if output:
+            version_string = output.strip()
+            match = re.match(r"Version (.*)", version_string)
+            if match:
+                return match.group(1)
+        return None
+
 class WebKitTestRunner(Browser):
     """Interface for WebKitTestRunner.
     """
