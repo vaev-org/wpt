@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+
+import re
+import requests
+import uuid
+import argparse
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+import os
+import base64
+import subprocess
+import tempfile
+
+DEBUG_IMAGE_FILES = False
+
+def extract_path(url):
+    match = re.match(r"https?://web-platform.test:\d+/(.+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def download_html(url, filename):
+    response = requests.get(url, verify=False)
+    response.raise_for_status()
+
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(response.text)
+
+
+class MockWindowScript():
+    # https://github.com/web-platform-tests/wpt/blob/bbfc05f2af01d92e2c5af0f8a37b580e233f48f1/tools/wptrunner/wptrunner/executors/executorwebdriver.py#L1070
+    def accept(self, script):
+        return script == """return [window.outerWidth - window.innerWidth,
+                       window.outerHeight - window.innerHeight];"""
+
+    def execute(self):
+        return [0, 0]
+
+class MockDocumentTitleScript():
+    # https://github.com/web-platform-tests/wpt/blob/master/tools/wptrunner/wptrunner/executors/runner.js
+    def accept(self, script):
+        return "document.title = 'MainThread'" in script
+
+    def execute(self):
+        return []
+
+
+class MockTestWaitScript():
+    # https://github.com/web-platform-tests/wpt/blob/master/tools/wptrunner/wptrunner/executors/test-wait.js
+    def accept(self, script):
+        return "const initialized = !!window.__wptrunner_url;" in script
+
+    def execute(self):
+        # TODO: not 100% sure
+        return ["complete", "complete", []]
+
+class SessionHandler(BaseHTTPRequestHandler):
+
+    sessions = {}
+    def generate_session_id(self):
+        return str(uuid.uuid4())
+
+    def _ok_headers(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+
+    # https://www.w3.org/TR/webdriver2/#dfn-new-sessions
+    def new_session(self, data):
+
+        session_id = self.generate_session_id()
+
+        # We are not using `capabilities`
+        capabilities = json.loads(data)
+        self.sessions[session_id] = {}
+        self.sessions[session_id]['capabilities'] = capabilities
+
+        self._ok_headers()
+
+        # Return success with data body.
+        return {
+            'value': {
+                'sessionId': session_id,
+                'capabilities': capabilities,
+            }
+        }
+
+    MOCKED_SYNC_EXECUTE = [
+        MockWindowScript(),
+        MockDocumentTitleScript()
+    ]
+
+   # https://www.w3.org/TR/webdriver2/#dfn-execute-script
+    def execute_script(self, data):
+        request_params = json.loads(data)
+
+        for mocked in self.MOCKED_SYNC_EXECUTE:
+            if mocked.accept(request_params['script']):
+                self._ok_headers()
+                return {
+                    'value': mocked.execute()
+                }
+
+        self.send_response(404)
+
+    MOCKED_ASYNC_EXECUTE = [
+        MockTestWaitScript()
+    ]
+
+    # https://www.w3.org/TR/webdriver2/#dfn-execute-async-script
+    def execute_async_script(self, data):
+        request_params = json.loads(data)
+
+        for mocked in self.MOCKED_ASYNC_EXECUTE:
+            if mocked.accept(request_params['script']):
+                self._ok_headers()
+                return {
+                    'value': mocked.execute()
+                }
+
+        self.send_response(404)
+
+    # https://www.w3.org/TR/webdriver2/#dfn-navigate-to
+    def navigate_to(self, data, session_id):
+        request_params = json.loads(data)
+
+        self.sessions[session_id]['url'] = request_params['url']
+
+        self._ok_headers()
+
+        # Return success with data null.
+        return {
+            'value': {}
+        }
+
+    # https://www.w3.org/TR/webdriver2/#dfn-set-window-rect
+    def set_window_rect(self):
+        self._ok_headers()
+
+        # FIXME
+        # Return success with data set to the WindowRect object for the session's current top-level browsing context.
+        return {
+            'value': [0, 0]
+        }
+
+    # https://www.w3.org/TR/webdriver2/#dfn-set-timeouts
+    def set_timeouts(self):
+        self._ok_headers()
+
+        # Return success with data null.
+        return {
+            'value': [0, 0]
+        }
+
+    def do_POST(self):
+        if not self.path.startswith("/session"):
+            self.send_error(404, "Not Found")
+            return
+
+        content_len = int(self.headers.get('Content-Length', 0))
+        data = self.rfile.read(content_len).decode('utf-8')
+
+        session_id = None
+        if self.path == "/session":
+            response = self.new_session(data)
+            self.wfile.write(json.dumps(response).encode('utf-8'))
+            return
+
+        session_id = self.path.split("/")[2]
+
+        if self.path.endswith('execute/sync'):
+            response = self.execute_script(data)
+        elif self.path.endswith('execute/async'):
+            response = self.execute_async_script(data)
+        elif self.path.endswith('url'):
+            response = self.navigate_to(data, session_id)
+        elif self.path.endswith('window/rect'):
+            response = self.set_window_rect()
+        elif self.path.endswith('timeouts'):
+            response = self.set_timeouts()
+        else:
+            self.send_error(404, "Not Found")
+            return
+
+        self.wfile.write(json.dumps(response).encode('utf-8'))
+
+    # https://www.w3.org/TR/webdriver2/#dfn-delete-session
+    def delete_session(self, session_id):
+        if not session_id in self.sessions:
+            self.send_error(404, "Session not found")
+            return
+
+        del self.sessions[session_id]
+        self._ok_headers()
+
+        # Return success with data null.
+        return {
+            'value': []
+        }
+
+    def do_DELETE(self):
+        if self.path.startswith("/session/"):
+            session_id = self.path.split("/")[2]
+            self.delete_session(session_id)
+        else:
+            self.send_error(404, "Not Found")
+
+    # https://www.w3.org/TR/webdriver2/#take-screenshot
+    def take_screenshot(self, session_id):
+
+        url = self.sessions[session_id]['url']
+
+        input_file_path = extract_path(url)
+
+        if DEBUG_IMAGE_FILES:
+            try:
+                os.makedirs('./tmp')
+            except FileExistsError:
+                pass
+            file_name = f"./tmp/{session_id}_{url.replace('/', '_')}"
+        else:
+            file = tempfile.NamedTemporaryFile(delete=False, suffix=".bmp")
+            file_name = file.name
+
+        command = f"paper-muncher render ./{input_file_path} -o {file_name}"
+        try:
+            subprocess.run(command, shell=True, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as e:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+
+            os.remove(file_name)
+
+            return {
+                'value': {
+                    'error': 'Error while rendering file with paper-muncher',
+                    'message': str(e.stderr),
+                    'stacktrace': 'bad run process'
+                }
+            }
+
+        self._ok_headers()
+        with open(file_name, "rb") as image_file:
+            image = base64.b64encode(image_file.read())
+
+        os.remove(file_name)
+
+        return {
+            'value': image.decode('utf-8')
+        }
+
+    def get_window_handle(self, session_id):
+        if not session_id in self.sessions:
+            self.send_error(404, "Session not found")
+            return
+
+        self._ok_headers()
+        # FIXME
+        # Return success with data being the window handle associated with session's current top-level browsing context.
+        return {
+            'value': {}
+        }
+
+    def do_GET(self):
+        if not self.path.startswith("/session/"):
+            self.send_error(404, "Not Found")
+            return
+
+        session_id = self.path.split("/")[2]
+        if self.path.endswith("screenshot"):
+            response = self.take_screenshot(session_id)
+        elif self.path.endswith("/window"):
+            response = self.get_window_handle(session_id)
+        else:
+            self.send_error(404, "Not Found")
+
+        self.wfile.write(json.dumps(response).encode('utf-8'))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Simple HTTP Server")
+    parser.add_argument("--port", type=int, help="Port to listen on")
+    args = parser.parse_args()
+
+    host_name = 'localhost'
+    server_port = args.port
+
+    web_server = HTTPServer((host_name, server_port), SessionHandler)
+    print("Server started http://%s:%s" % (host_name, server_port))
+
+    try:
+        web_server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+    web_server.server_close()
+    print("Server stopped.")
