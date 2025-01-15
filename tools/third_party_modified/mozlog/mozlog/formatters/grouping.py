@@ -52,14 +52,14 @@ class GroupingFormatter(base.BaseFormatter):
                 self.line_width = 80
 
         self.expected = {
-            "OK": 0,
-            "PASS": 0,
-            "FAIL": 0,
-            "PRECONDITION_FAILED": 0,
-            "ERROR": 0,
-            "TIMEOUT": 0,
-            "SKIP": 0,
-            "CRASH": 0,
+            "OK": [],
+            "PASS": [],
+            "FAIL": [],
+            "PRECONDITION_FAILED": [],
+            "ERROR": [],
+            "TIMEOUT": [],
+            "SKIP": [],
+            "CRASH": [],
         }
 
         self.unexpected_tests = {
@@ -164,7 +164,7 @@ class GroupingFormatter(base.BaseFormatter):
             output += indent + u"\u2514 %s\n" % lines[-1]
         return output
 
-    def get_lines_for_unexpected_result(
+    def get_lines_for_result(
         self, test_name, status, expected, message, stack
     ):
         # Test names sometimes contain control characters, which we want
@@ -217,7 +217,7 @@ class GroupingFormatter(base.BaseFormatter):
             return ""
 
         def add_subtest_failure(lines, subtest, stack=None):
-            lines += self.get_lines_for_unexpected_result(
+            lines += self.get_lines_for_result(
                 subtest.get("subtest", None),
                 subtest.get("status", None),
                 subtest.get("expected", None),
@@ -264,15 +264,19 @@ class GroupingFormatter(base.BaseFormatter):
         del self.running_tests[data["thread"]]
         new_display = self.build_status_line()
 
+        output = ""
         if not had_unexpected_test_result and not subtest_failures:
-            self.expected[test_status] += 1
-            if self.interactive:
-                return self.generate_output(text=None, new_display=new_display)
-            else:
-                return self.generate_output(
-                    text="  %s\n" % self.get_test_name_output(subsuite, test_name),
-                    new_display=new_display
-                )
+            self.expected[test_status].append(test_name)
+            # if self|.interactive:
+            lines = self.get_lines_for_result(
+                self.get_test_name_output(subsuite, test_name),
+                test_status,
+                data.get("expected", None),
+                data.get("message", None),
+                None
+            )
+            output += self.wrap_and_indent_lines(lines, "  ") + "\n"
+            return self.generate_output(text=output, new_display=new_display)
 
         if test_status in known_intermittent_statuses:
             self.known_intermittent_results[(subsuite, test_name, None)] = data
@@ -285,10 +289,9 @@ class GroupingFormatter(base.BaseFormatter):
         else:
             stack = data.get("stack", None)
 
-        output = ""
         if had_unexpected_test_result:
             self.unexpected_tests[test_status].append(data)
-            lines = self.get_lines_for_unexpected_result(
+            lines = self.get_lines_for_result(
                 self.get_test_name_output(subsuite, test_name),
                 test_status,
                 data.get("expected", None),
@@ -329,8 +332,8 @@ class GroupingFormatter(base.BaseFormatter):
             (self.end_time - self.start_time) / 1000.0,
         )
         output += u"  \u2022 %i ran as expected. %i tests skipped.\n" % (
-            sum(self.expected.values()),
-            self.expected["SKIP"],
+            sum(len(l) for l in self.expected.values()),
+            len(self.expected["SKIP"]),
         )
         if self.known_intermittent_results:
             output += u"  \u2022 %i known intermittent results.\n" % (
@@ -371,6 +374,8 @@ class GroupingFormatter(base.BaseFormatter):
                 self.known_intermittent_results
             )
             output += u"Tests with known intermittent results:\n" + results
+
+        output += "Tests ok:\n" + "\n".join(self.expected["PASS"]) + "\n"
 
         return self.generate_output(text=output, new_display="")
 
