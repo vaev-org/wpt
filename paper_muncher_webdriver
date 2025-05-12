@@ -223,7 +223,7 @@ class SessionHandler(BaseHTTPRequestHandler):
             file = tempfile.NamedTemporaryFile(delete=False, suffix=".bmp")
             file_name = file.name
 
-        command = f"paper-muncher render ./{input_file_path} -o {file_name}"
+        command = f"paper-muncher --unsecure --verbose render ./{input_file_path} -o {file_name} "
         try:
             subprocess.run(command, shell=True, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         except subprocess.CalledProcessError as e:
