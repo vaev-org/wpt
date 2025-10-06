@@ -28,6 +28,9 @@ features:
   files:
   - alternates-order.html
   - font-variant-alternates-*
+- name: font-variant-emoji
+  files:
+  - font-variant-emoji-*
 - name: font-variant-position
   files:
   - font-variant-position-*
@@ -36,3 +39,6 @@ features:
   - ascent-descent-override.html
   - line-gap-override.html
   - metrics-override-normal-keyword.html
+- name: font-language-override
+  files:
+  - font-language-override-*

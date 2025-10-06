@@ -1,4 +1,5 @@
 // META: title=Summarizer Availability Available
+// META: script=/resources/testdriver.js
 // META: script=../resources/util.js
 // META: timeout=long
 
@@ -11,7 +12,7 @@ promise_test(async () => {
 
 promise_test(async () => {
   const availability = await Summarizer.availability({
-    type: 'tl;dr',
+    type: 'tldr',
     format: 'plain-text',
     length: 'medium',
     expectedInputLanguages: ['en-GB'],
@@ -23,12 +24,12 @@ promise_test(async () => {
 
 promise_test(async () => {
   const availability = await Summarizer.availability({
-    type: 'tl;dr',
+    type: 'tldr',
     format: 'plain-text',
     length: 'medium',
-    expectedInputLanguages: ['es'], // not supported
+    expectedInputLanguages: ['zu'], // not supported
     expectedContextLanguages: ['en'],
-    outputLanguage: 'es', // not supported
+    outputLanguage: 'zu', // not supported
   });
   assert_equals(availability, 'unavailable');
 }, 'Summarizer.availability() returns unavailable for unsupported languages');

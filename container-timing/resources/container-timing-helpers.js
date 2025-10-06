@@ -20,3 +20,24 @@ function checkContainerEntry(entry, identifier, last_element_id, beforeRender) {
 function checkContainerSize(entry, size) {
   assert_equals(entry.size, size);
 }
+
+function onElementTimingEvent(func) {
+  const finish_observer = new PerformanceObserver((entryList) => {
+    finish_observer.disconnect();
+    requestAnimationFrame(() => { func(); });
+  });
+  finish_observer.observe({ entryTypes: ['element'] });
+}
+
+function finishOnElementTiming(t) {
+  onElementTimingEvent(() => { t.done(); });
+}
+
+function addPaintingElementTimingAfterDoubleRAF(parent) {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    const finish_img = document.createElement('img');
+    finish_img.src = '/container-timing/resources/square100.png';
+    finish_img.setAttribute('elementtiming', '');
+    parent.appendChild(finish_img);
+  }));
+}
