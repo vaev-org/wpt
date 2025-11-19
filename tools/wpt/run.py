@@ -788,6 +788,10 @@ class Ladybird(BrowserSetup):
     browser_cls = browser.Ladybird
 
 
+class Vaev(BrowserSetup):
+    name = "vaev"
+    browser_cls = browser.Vaev
+
 class WebKitTestRunner(BrowserSetup):
     name = "wktr"
     browser_cls = browser.WebKitTestRunner
@@ -889,6 +893,7 @@ BUILTIN_PRODUCT_SETUP = {
     "wpewebkit_minibrowser": WPEWebKitMiniBrowser,
     "epiphany": Epiphany,
     "ladybird": Ladybird,
+    "vaev": Vaev,
 }
 
 
